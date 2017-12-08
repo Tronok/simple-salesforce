@@ -72,7 +72,7 @@ class SFBulkType(object):
         self.session = session
         self.headers = headers
 
-    def _create_job(self, operation, object_name, external_id_field=None):
+    def _create_job(self, operation, object_name, external_id_field=None, fp=None, chunk_size=100000):
         """ Create a bulk job
 
         Arguments:
@@ -88,14 +88,23 @@ class SFBulkType(object):
             'contentType': 'JSON'
         }
 
+        additional_headers = {}
+
         if operation == 'upsert':
             payload['externalIdFieldName'] = external_id_field
+
+        if operation == 'query' and fp is not None:
+            additional_headers = {
+                'Sforce-Enable-PKChunking': 'chunkSize={}'.format(chunk_size)
+            }
 
         url = "{}{}".format(self.bulk_url, 'job')
 
         result = call_salesforce(url=url, method='POST', session=self.session,
                                   headers=self.headers,
-                                  data=json.dumps(payload))
+                                  data=json.dumps(payload),
+                                  additional_headers=additional_headers)
+
         return result.json(object_pairs_hook=OrderedDict)
 
     def _close_job(self, job_id):
@@ -129,9 +138,10 @@ class SFBulkType(object):
 
         if operation != 'query':
             data = json.dumps(data)
-
+        
         result = call_salesforce(url=url, method='POST', session=self.session,
                                   headers=self.headers, data=data)
+
         return result.json(object_pairs_hook=OrderedDict)
 
     def _get_batch(self, job_id, batch_id):
@@ -143,6 +153,18 @@ class SFBulkType(object):
         result = call_salesforce(url=url, method='GET', session=self.session,
                                   headers=self.headers)
         return result.json(object_pairs_hook=OrderedDict)
+
+    def _get_batches(self, job_id, batch_id=None):
+        """ Get an existing batch to check the status """
+        if batch_id is not None:
+            return [self._get_batch(job_id=job_id, batch_id=batch_id)]
+
+        url = "{}{}{}{}".format(self.bulk_url, 'job/', job_id, '/batch')
+
+        result = call_salesforce(url=url, method='GET', session=self.session,
+                                  headers=self.headers)
+
+        return result.json(object_pairs_hook=OrderedDict)['batchInfo']
 
     def _get_batch_results(self, job_id, batch_id, operation):
         """ retrieve a set of results from a completed job """
@@ -162,9 +184,25 @@ class SFBulkType(object):
 
         return result.json()
 
+    def _monitor_batches(self, job_id, batch_id=None, wait=5):
+        """ monitor a job's batches
+        """
+        complete_states = {'Completed', 'Failed', 'NotProcessed'}
+
+        batches = self._get_batches(job_id=job_id, batch_id=batch_id)
+
+        batch_states = set([batch['state'] for batch in batches])
+
+        while not batch_states.issubset(complete_states):
+            sleep(wait)
+            batches = self._get_batches(job_id=job_id, batch_id=batch_id)
+            batch_states = set([batch['state'] for batch in batches])
+        
+        return True
+
     #pylint: disable=R0913
     def _bulk_operation(self, object_name, operation, data,
-                        external_id_field=None, wait=5):
+                        external_id_field=None, wait=5, fp=None, chunk_size=100000):
         """ String together helper functions to create a complete
         end-to-end bulk API request
 
@@ -176,26 +214,50 @@ class SFBulkType(object):
         * external_id_field -- unique identifier field for upsert operations
         * wait -- seconds to sleep between checking batch status
         """
+        job = self._create_job(
+            object_name=object_name,
+            operation=operation,
+            external_id_field=external_id_field,
+            fp=fp,
+            chunk_size=chunk_size
+        )
 
-        job = self._create_job(object_name=object_name, operation=operation,
-                               external_id_field=external_id_field)
-
-        batch = self._add_batch(job_id=job['id'], data=data,
+        init_batch = self._add_batch(job_id=job['id'], data=data,
                                 operation=operation)
+
+        self._monitor_batches(job_id=job['id'], batch_id=init_batch['id'])
+
+        # # If chunking, wait for first batch to be chunked
+        # if fp is not None:
+        #     self._monitor_batches(job_id=job['id'])
 
         self._close_job(job_id=job['id'])
 
-        batch_status = self._get_batch(job_id=batch['jobId'],
-                                       batch_id=batch['id'])['state']
+        self._monitor_batches(job_id=job['id'])
 
-        while batch_status not in ['Completed', 'Failed', 'Not Processed']:
-            sleep(wait)
-            batch_status = self._get_batch(job_id=batch['jobId'],
-                                           batch_id=batch['id'])['state']
-
-        results = self._get_batch_results(job_id=batch['jobId'],
+        batches = self._get_batches(job['id'])
+        
+        if fp is not None:
+            for batch in batches:
+                if batch['id'] == init_batch['id']:
+                    continue
+                
+                batch_result = self._get_batch_results(job_id=init_batch['jobId'],
                                           batch_id=batch['id'],
                                           operation=operation)
+                with open(fp, 'a') as jfile:
+                    for record in batch_result:
+                        jfile.write(json.dumps(record) + '\n')
+            
+            return True
+
+        results = self._get_batch_results(job_id=init_batch['jobId'],
+                                          batch_id=init_batch['id'],
+                                          operation=operation)
+
+        # results = self._get_batch_results(job_id=batch['jobId'],
+        #                                   batch_id=batch['id'],
+        #                                   operation=operation)
         return results
 
     # _bulk_operation wrappers to expose supported Salesforce bulk operations
@@ -231,8 +293,9 @@ class SFBulkType(object):
                                        operation='hardDelete', data=data)
         return results
 
-    def query(self, data):
+    def query(self, data, fp=None, chunk_size=100000):
         """ bulk query """
         results = self._bulk_operation(object_name=self.object_name,
-                                       operation='query', data=data)
+                                       operation='query', data=data, fp=fp, chunk_size=chunk_size)
         return results
+
