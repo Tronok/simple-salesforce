@@ -95,7 +95,7 @@ class SFBulkType(object):
 
         if operation == 'query' and fp is not None:
             additional_headers = {
-                'Sforce-Enable-PKChunking': 'chunkSize:{}'.format(chunk_size)
+                'Sforce-Enable-PKChunking': 'chunkSize={}'.format(chunk_size)
             }
 
         url = "{}{}".format(self.bulk_url, 'job')
@@ -104,6 +104,7 @@ class SFBulkType(object):
                                   headers=self.headers,
                                   data=json.dumps(payload),
                                   additional_headers=additional_headers)
+
         return result.json(object_pairs_hook=OrderedDict)
 
     def _close_job(self, job_id):
@@ -245,7 +246,6 @@ class SFBulkType(object):
                                           batch_id=batch['id'],
                                           operation=operation)
                 with open(fp, 'a') as jfile:
-                    print('Batch Length: {}'.format(len(batch_result)))
                     for record in batch_result:
                         jfile.write(json.dumps(record) + '\n')
             
