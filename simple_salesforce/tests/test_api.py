@@ -581,6 +581,7 @@ class TestSalesforce(unittest.TestCase):
         client.request = requests.Session()
         client.headers = {}
         client.base_url = 'https://localhost'
+        client.calls_logger = None
         client.query('q')
 
         self.assertDictEqual(client.api_usage, {'api-usage': Usage(18, 5000)})
@@ -602,7 +603,9 @@ class TestSalesforce(unittest.TestCase):
         client.request = requests.Session()
         client.headers = {}
         client.base_url = 'https://localhost'
+        client.calls_logger = None
         client.query('q')
+
 
         self.assertDictEqual(client.api_usage,
                              {'api-usage': Usage(25, 5000),
