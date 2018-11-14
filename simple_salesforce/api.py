@@ -60,7 +60,7 @@ class Salesforce(object):
             self, username=None, password=None, security_token=None,
             session_id=None, instance=None, instance_url=None,
             organizationId=None, sandbox=None, version=DEFAULT_API_VERSION,
-            proxies=None, session=None, client_id=None, domain=None):
+            proxies=None, session=None, client_id=None, domain=None, calls_logger=None):
         """Initialize the instance with the given parameters.
 
         Available kwargs
@@ -197,6 +197,8 @@ class Salesforce(object):
 
         self.api_usage = {}
 
+        self.calls_logger = calls_logger
+
     def describe(self):
         """Describes all available objects
         """
@@ -232,7 +234,7 @@ class Salesforce(object):
         if name == 'bulk':
             # Deal with bulk API functions
             return SFBulkHandler(self.session_id, self.bulk_url, self.proxies,
-                                 self.session)
+                                 self.session, self.calls_logger)
 
         return SFType(
             name, self.session_id, self.sf_instance, sf_version=self.sf_version,
@@ -456,7 +458,9 @@ class Salesforce(object):
             method,
             self.apex_url + action,
             name="apexexcute",
-            data=json.dumps(data), **kwargs
+            data=json.dumps(data),
+            res_to_json=False,
+            **kwargs
         )
         try:
             response_content = result.json()
@@ -466,7 +470,7 @@ class Salesforce(object):
 
         return response_content
 
-    def _call_salesforce(self, method, url, name="", **kwargs):
+    def _call_salesforce(self, method, url, name="", res_to_json=True, **kwargs):
         """Utility method for performing HTTP call to Salesforce.
 
         Returns a `requests.result` object.
@@ -475,11 +479,22 @@ class Salesforce(object):
             method, url, headers=self.headers, **kwargs)
 
         if result.status_code >= 300:
+            if self.calls_logger is not None:
+                self.calls_logger.add_metric(url, method, None)
             exception_handler(result, name=name)
 
         sforce_limit_info = result.headers.get('Sforce-Limit-Info')
         if sforce_limit_info:
             self.api_usage = self.parse_api_usage(sforce_limit_info)
+
+        if res_to_json and self.calls_logger is not None:
+            json_res = result.json(object_pairs_hook=OrderedDict)
+            row_count = 1
+            if json_res.get("fields") is not None:
+                row_count = len(json_res.get("fields"))
+            if json_res.get("records") is not None:
+                row_count = len(json_res.get("records"))
+            self.calls_logger.add_metric(url, method, row_count)
 
         return result
 
