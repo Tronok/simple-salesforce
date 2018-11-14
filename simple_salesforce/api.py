@@ -238,7 +238,7 @@ class Salesforce(object):
 
         return SFType(
             name, self.session_id, self.sf_instance, sf_version=self.sf_version,
-            proxies=self.proxies, session=self.session)
+            proxies=self.proxies, session=self.session, calls_logger=self.calls_logger)
 
     # User utility methods
     def set_password(self, user, password):
@@ -487,8 +487,11 @@ class Salesforce(object):
         if sforce_limit_info:
             self.api_usage = self.parse_api_usage(sforce_limit_info)
 
-        if res_to_json and self.calls_logger is not None:
-            json_res = result.json(object_pairs_hook=OrderedDict)
+        if self.calls_logger is not None:
+            if res_to_json:
+                json_res = result.json(object_pairs_hook=OrderedDict)
+            else:
+                json_res = result
             row_count = 1
             if json_res.get("fields") is not None:
                 row_count = len(json_res.get("fields"))
@@ -546,7 +549,8 @@ class SFType(object):
     # pylint: disable=too-many-arguments
     def __init__(
             self, object_name, session_id, sf_instance,
-            sf_version=DEFAULT_API_VERSION, proxies=None, session=None):
+            sf_version=DEFAULT_API_VERSION, proxies=None, session=None,
+            calls_logger=None):
         """Initialize the instance with the given parameters.
 
         Arguments:
@@ -568,7 +572,7 @@ class SFType(object):
         if not session and proxies is not None:
             self.session.proxies = proxies
         self.api_usage = {}
-
+        self.calls_logger = calls_logger
         self.base_url = (
             u'https://{instance}/services/data/v{sf_version}/sobjects'
             '/{object_name}/'.format(instance=sf_instance,
@@ -698,7 +702,7 @@ class SFType(object):
         """
         result = self._call_salesforce(
             method='PATCH', url=urljoin(self.base_url, record_id),
-            data=json.dumps(data), headers=headers
+            data=json.dumps(data), headers=headers, res_to_json=False
         )
         return self._raw_response(result, raw_response)
 
@@ -721,7 +725,7 @@ class SFType(object):
         """
         result = self._call_salesforce(
             method='PATCH', url=urljoin(self.base_url, record_id),
-            data=json.dumps(data), headers=headers
+            data=json.dumps(data), headers=headers, res_to_json=False
         )
         return self._raw_response(result, raw_response)
 
@@ -742,7 +746,7 @@ class SFType(object):
         """
         result = self._call_salesforce(
             method='DELETE', url=urljoin(self.base_url, record_id),
-            headers=headers
+            headers=headers, res_to_json=False
         )
         return self._raw_response(result, raw_response)
 
@@ -787,7 +791,7 @@ class SFType(object):
         result = self._call_salesforce(method='GET', url=url, headers=headers)
         return result.json(object_pairs_hook=OrderedDict)
 
-    def _call_salesforce(self, method, url, **kwargs):
+    def _call_salesforce(self, method, url, res_to_json=True, **kwargs):
         """Utility method for performing HTTP call to Salesforce.
 
         Returns a `requests.result` object.
@@ -802,11 +806,25 @@ class SFType(object):
         result = self.session.request(method, url, headers=headers, **kwargs)
 
         if result.status_code >= 300:
+            if self.calls_logger is not None:
+                self.calls_logger.add_metric(url, method, None)
             exception_handler(result, self.name)
 
         sforce_limit_info = result.headers.get('Sforce-Limit-Info')
         if sforce_limit_info:
             self.api_usage = Salesforce.parse_api_usage(sforce_limit_info)
+
+        if self.calls_logger is not None:
+            if res_to_json:
+                json_res = result.json(object_pairs_hook=OrderedDict)
+            else:
+                json_res = result
+            row_count = 1
+            if json_res.get("fields") is not None:
+                row_count = len(json_res.get("fields"))
+            if json_res.get("records") is not None:
+                row_count = len(json_res.get("records"))
+            self.calls_logger.add_metric(url, method, row_count)
 
         return result
 
