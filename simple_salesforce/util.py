@@ -59,19 +59,3 @@ def exception_handler(result, name=""):
     exc_cls = exc_map.get(result.status_code, SalesforceGeneralError)
 
     raise exc_cls(result.url, result.status_code, name, response_content)
-
-
-def call_salesforce(url, method, session, headers, **kwargs):
-    """Utility method for performing HTTP call to Salesforce.
-
-    Returns a `requests.result` object.
-    """
-
-    additional_headers = kwargs.pop('additional_headers', dict())
-    headers.update(additional_headers or dict())
-    result = session.request(method, url, headers=headers, **kwargs)
-
-    if result.status_code >= 300:
-        exception_handler(result)
-
-    return result
