@@ -96,10 +96,10 @@ class SFBulkType(object):
 
         if res_to_json and self.calls_logger is not None:
             json_res = result.json(object_pairs_hook=OrderedDict)
-            row_count = 1
-            if json_res.get("fields") is not None:
+            row_count = len(json_res)
+            if isinstance(json_res, dict) and json_res.get("fields") is not None:
                 row_count = len(json_res.get("fields"))
-            if json_res.get("records") is not None:
+            if isinstance(json_res, dict) and json_res.get("records") is not None:
                 row_count = len(json_res.get("records"))
             self.calls_logger.add_metric(url, method, row_count)
 
