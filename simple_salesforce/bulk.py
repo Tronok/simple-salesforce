@@ -208,12 +208,17 @@ class SFBulkType(object):
         result = self._call_salesforce(url=url, method='GET', session=self.session,
                                        headers=self.headers)
 
+        res_js = result.json()
+
         if operation == 'query':
-            url_query_results = "{}{}{}".format(url, '/', result.json()[0])
-            query_result = self._call_salesforce(url=url_query_results, method='GET',
-                                                 session=self.session,
-                                                 headers=self.headers)
-            return query_result.json()
+            total_res = []
+            for elem in res_js:
+                url_query_results = "{}{}{}".format(url, '/', elem)
+                query_result = self._call_salesforce(url=url_query_results, method='GET',
+                                                     session=self.session,
+                                                     headers=self.headers)
+                total_res.extend(query_result.json())
+            return total_res
 
         return result.json()
 
