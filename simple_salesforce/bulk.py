@@ -128,7 +128,7 @@ class SFBulkType(object):
         if operation == 'upsert':
             payload['externalIdFieldName'] = external_id_field
 
-        if operation == 'query' and fp is not None:
+        if operation == 'query' and chunk_size is not None:
             additional_headers = {
                 'Sforce-Enable-PKChunking': 'chunkSize={}'.format(chunk_size)
             }
