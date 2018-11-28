@@ -1,4 +1,5 @@
 """ Classes for interacting with Salesforce Bulk API """
+import logging
 
 try:
     from collections import OrderedDict
@@ -217,13 +218,16 @@ class SFBulkType(object):
                 query_result = self._call_salesforce(url=url_query_results, method='GET',
                                                      session=self.session,
                                                      headers=self.headers)
+                logging.info("Batch {} is obtained".format(elem))
                 json_res = query_result.json()
                 if fp is not None:
                     with open(fp, 'a') as jfile:
                         for record in json_res:
                             jfile.write(json.dumps(record, ensure_ascii=False) + '\n')
+                    logging.info("Batch {} is streamed to disk".format(elem))
                 else:
                     total_res.extend(json_res)
+                    logging.info("Batch {} is added to result list".format(elem))
             if fp is not None:
                 return True
             return total_res
@@ -268,14 +272,20 @@ class SFBulkType(object):
             chunk_size=chunk_size
         )
 
+        logging.info("Bulk job is created")
+
         init_batch = self._add_batch(job_id=job['id'], data=data,
                                      operation=operation)
+
+        logging.info("Initial Batch is added")
 
         self._monitor_batches(job_id=job['id'], batch_id=init_batch['id'], wait=wait)
 
         self._close_job(job_id=job['id'])
 
         self._monitor_batches(job_id=job['id'], wait=wait)
+
+        logging.info("Monitoring of batches has ended")
 
         batches = self._get_batches(job['id'])
 
