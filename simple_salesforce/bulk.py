@@ -96,13 +96,14 @@ class SFBulkType(object):
             exception_handler(result)
 
         if res_to_json and self.calls_logger is not None:
-            json_res = result.json(object_pairs_hook=OrderedDict)
-            row_count = len(json_res)
-            if isinstance(json_res, dict) and json_res.get("fields") is not None:
-                row_count = len(json_res.get("fields"))
-            if isinstance(json_res, dict) and json_res.get("records") is not None:
-                row_count = len(json_res.get("records"))
-            self.calls_logger.add_metric(url, method, row_count)
+            # row counts are removed to fight memory issues
+            #json_res = result.json(object_pairs_hook=OrderedDict)
+            #row_count = len(json_res)
+            # if isinstance(json_res, dict) and json_res.get("fields") is not None:
+            #     row_count = len(json_res.get("fields"))
+            # if isinstance(json_res, dict) and json_res.get("records") is not None:
+            #     row_count = len(json_res.get("records"))
+            self.calls_logger.add_metric(url, method, None)
 
         return result
 
@@ -215,6 +216,7 @@ class SFBulkType(object):
             total_res = []
             for elem in res_js:
                 url_query_results = "{}{}{}".format(url, '/', elem)
+                logging.info("Sending query to salesforce to get the batch {}".format(elem))
                 query_result = self._call_salesforce(url=url_query_results, method='GET',
                                                      session=self.session,
                                                      headers=self.headers)
