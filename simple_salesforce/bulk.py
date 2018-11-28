@@ -234,7 +234,7 @@ class SFBulkType(object):
                 return True
             return total_res
 
-        return result.json()
+        return res_js
 
     def _monitor_batches(self, job_id, batch_id=None, wait=5):
         """ monitor a job's batches
@@ -249,6 +249,7 @@ class SFBulkType(object):
             sleep(wait)
             batches = self._get_batches(job_id=job_id, batch_id=batch_id)
             batch_states = set([batch['state'] for batch in batches])
+            logging.info("Batches states are " + json.dumps(batch_states))
 
         return True
 
