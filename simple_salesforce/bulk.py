@@ -212,6 +212,8 @@ class SFBulkType(object):
 
         res_js = result.json()
 
+        logging.info("Batch result response is " + json.dumps(res_js))
+
         if operation == 'query':
             total_res = []
             for elem in res_js:
