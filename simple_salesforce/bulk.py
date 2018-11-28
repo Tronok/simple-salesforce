@@ -199,7 +199,7 @@ class SFBulkType(object):
 
         return result.json(object_pairs_hook=OrderedDict)['batchInfo']
 
-    def _get_batch_results(self, job_id, batch_id, operation):
+    def _get_batch_results(self, job_id, batch_id, operation, fp=None):
         """ retrieve a set of results from a completed job """
 
         url = "{}{}{}{}{}{}".format(self.bulk_url, 'job/', job_id, '/batch/',
@@ -217,7 +217,15 @@ class SFBulkType(object):
                 query_result = self._call_salesforce(url=url_query_results, method='GET',
                                                      session=self.session,
                                                      headers=self.headers)
-                total_res.extend(query_result.json())
+                json_res = query_result.json()
+                if fp is not None:
+                    with open(fp, 'a') as jfile:
+                        for record in json_res:
+                            jfile.write(json.dumps(record, ensure_ascii=False) + '\n')
+                else:
+                    total_res.extend(json_res)
+            if fp is not None:
+                return True
             return total_res
 
         return result.json()
@@ -276,18 +284,17 @@ class SFBulkType(object):
                 if batch['id'] == init_batch['id']:
                     continue
 
-                batch_result = self._get_batch_results(job_id=init_batch['jobId'],
-                                                       batch_id=batch['id'],
-                                                       operation=operation)
-                with open(fp, 'a') as jfile:
-                    for record in batch_result:
-                        jfile.write(json.dumps(record) + '\n')
+                self._get_batch_results(job_id=init_batch['jobId'],
+                                        batch_id=batch['id'],
+                                        operation=operation,
+                                        fp=fp)
 
             return True
 
         results = self._get_batch_results(job_id=init_batch['jobId'],
                                           batch_id=init_batch['id'],
-                                          operation=operation)
+                                          operation=operation,
+                                          fp=fp)
         return results
 
     # _bulk_operation wrappers to expose supported Salesforce bulk operations
