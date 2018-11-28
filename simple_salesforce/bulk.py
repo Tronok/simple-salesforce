@@ -248,8 +248,9 @@ class SFBulkType(object):
         while not batch_states.issubset(complete_states):
             sleep(wait)
             batches = self._get_batches(job_id=job_id, batch_id=batch_id)
-            batch_states = set([batch['state'] for batch in batches])
-            logging.info("Batches states are " + json.dumps(batch_states))
+            states_tmp = [batch['state'] for batch in batches]
+            batch_states = set(states_tmp)
+            logging.info("Batches states are " + json.dumps(states_tmp))
 
         return True
 
