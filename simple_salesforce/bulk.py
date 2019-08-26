@@ -1,5 +1,6 @@
 """ Classes for interacting with Salesforce Bulk API """
 import logging
+import os
 from tempfile import NamedTemporaryFile
 
 import bigjson
@@ -222,42 +223,48 @@ class SFBulkType(object):
 
         if operation == 'query':
             total_res = []
-            with NamedTemporaryFile("ab", delete=False) as tmp_file:
-                for elem in res_js:
-                    url_query_results = "{}{}{}".format(url, '/', elem)
-                    logging.info("Sending query to salesforce to get the batch {}".format(elem))
-                    headers = self.headers
-                    streaming = True if fp is not None else False
-                    with self.session.request("GET", url_query_results, headers=headers, stream=streaming) as query_result:
+            tmp_name = None
+            try:
+                with NamedTemporaryFile("ab", delete=False) as tmp_file:
+                    tmp_name = tmp_file.name
+                    for elem in res_js:
+                        url_query_results = "{}{}{}".format(url, '/', elem)
+                        logging.info("Sending query to salesforce to get the batch {}".format(elem))
+                        headers = self.headers
+                        streaming = True if fp is not None else False
+                        with self.session.request("GET", url_query_results, headers=headers, stream=streaming) as query_result:
 
-                        if result.status_code >= 300:
+                            if result.status_code >= 300:
+                                if self.calls_logger is not None:
+                                    self.calls_logger.add_metric(url, "GET", None)
+                                exception_handler(result)
+
                             if self.calls_logger is not None:
                                 self.calls_logger.add_metric(url, "GET", None)
-                            exception_handler(result)
 
-                        if self.calls_logger is not None:
-                            self.calls_logger.add_metric(url, "GET", None)
+                            logging.info("Batch {} is obtained".format(elem))
+                            if fp is not None:
+                                for chunk in query_result.iter_content(chunk_size=1024000):
+                                    if chunk:  # filter out keep-alive new chunks
+                                        tmp_file.write(chunk)
 
-                        logging.info("Batch {} is obtained".format(elem))
-                        if fp is not None:
-                            for chunk in query_result.iter_content(chunk_size=1024):
-                                if chunk:  # filter out keep-alive new chunks
-                                    tmp_file.write(chunk)
+                                logging.info("Batch {} is streamed to disk".format(elem))
+                            else:
+                                json_res = query_result.json()
+                                total_res.extend(json_res)
+                                logging.info("Batch {} is added to result list".format(elem))
 
-                            logging.info("Batch {} is streamed to disk".format(elem))
-                        else:
-                            json_res = query_result.json()
-                            total_res.extend(json_res)
-                            logging.info("Batch {} is added to result list".format(elem))
-
-            if fp is not None:
-                with open(tmp_file.name, "rb") as tmp_file:
-                    with open(fp, 'a') as jfile:
-                        records = bigjson.load(tmp_file)
-                        for record in records:
-                            jfile.write(json.dumps(record.to_python(), ensure_ascii=False) + '\n')
-                return True
-            return total_res
+                if fp is not None:
+                    with open(tmp_name, "rb") as tmp_file:
+                        with open(fp, 'a') as jfile:
+                            records = bigjson.load(tmp_file)
+                            for record in records:
+                                jfile.write(json.dumps(record.to_python(), ensure_ascii=False) + '\n')
+                    return True
+                return total_res
+            finally:
+                if tmp_name is not None:
+                    os.remove(tmp_name)
 
         return res_js
 
