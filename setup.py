@@ -38,7 +38,7 @@ setup(
 
     install_requires=[
         'requests[security]',
-        'bigjson==1.0.1'
+        'ijson==2.4'
     ] + pyver_install_requires,
     tests_require=[
         'nose>=1.3.0',
