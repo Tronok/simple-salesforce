@@ -233,13 +233,11 @@ class SFBulkType(object):
                         with self.session.request("GET", url_query_results, headers=headers,
                                                   stream=streaming) as query_result:
 
-                            if result.status_code >= 300:
-                                if self.calls_logger is not None:
-                                    self.calls_logger.add_metric(url, "GET", None)
-                                exception_handler(result)
-
                             if self.calls_logger is not None:
-                                self.calls_logger.add_metric(url, "GET", None)
+                                self.calls_logger.add_metric(url_query_results, "GET", None)
+
+                            if result.status_code >= 300:
+                                exception_handler(result)
 
                             logging.info("Batch {} is obtained".format(elem))
                             if fp is not None:
