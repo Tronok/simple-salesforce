@@ -221,58 +221,71 @@ class SFBulkType(object):
 
         if operation == 'query':
             total_res = []
-            tmp_name = None
+            tmp_names = []
             try:
-                with NamedTemporaryFile("ab", delete=False) as tmp_file:
-                    tmp_name = tmp_file.name
-                    for elem in res_js:
-                        url_query_results = "{}{}{}".format(url, '/', elem)
-                        logging.info("Sending query to salesforce to get the batch {}".format(elem))
-                        headers = self.headers
-                        streaming = True if fp is not None else False
-                        with self.session.request("GET", url_query_results, headers=headers,
-                                                  stream=streaming) as query_result:
 
-                            if self.calls_logger is not None:
-                                self.calls_logger.add_metric(url_query_results, "GET", None)
+                for elem in res_js:
+                    with NamedTemporaryFile("wb", delete=False) as tmp_file:
+                        tmp_name = self.save_batch_result_data(elem, fp, result, tmp_file, tmp_names, total_res, url)
 
-                            if result.status_code >= 300:
-                                exception_handler(result)
+                    if fp is not None:
+                        with open(tmp_name, "rb") as tmp_file:
+                            with open(fp, 'a', encoding="utf-8") as jfile:
+                                #try:
+                                itms = ijson.items(tmp_file, "item")
+                                for itm in itms:
+                                    for k, v in itm.items():
+                                        if isinstance(v, decimal.Decimal):
+                                            itm[k] = float(v)
+                                    jfile.write(json.dumps(itm) + "\n")
+                                # except Exception as e:
+                                #     logging.warning("Failed to process output line by line. " +
+                                #                     "Service will attempt to load all data in memory to handle this. " +
+                                #                     "Error is " + str(e))
+                                #     all_data = json.load(tmp_file)
+                                #     for itm in all_data:
+                                #         jfile.write(json.dumps(itm) + "\n")
+                                # reader = FileReader(tmp_file)
+                                # records = reader.read()
+                                # for record in records:
+                                #     dct = record.to_python()
+                                #     jfile.write(json.dumps(dct, ensure_ascii=False) + '\n')
 
-                            logging.info("Batch {} is obtained".format(elem))
-                            if fp is not None:
-                                for chunk in query_result.iter_content(chunk_size=1024000):
-                                    if chunk:  # filter out keep-alive new chunks
-                                        tmp_file.write(chunk)
-
-                                logging.info("Batch {} is streamed to disk".format(elem))
-                            else:
-                                json_res = query_result.json()
-                                total_res.extend(json_res)
-                                logging.info("Batch {} is added to result list".format(elem))
-
-                if fp is not None:
-
-                    with open(tmp_name, "rb") as tmp_file:
-                        with open(fp, 'a', encoding="utf-8") as jfile:
-                            itms = ijson.items(tmp_file, "item")
-                            for itm in itms:
-                                for k, v in itm.items():
-                                    if isinstance(v, decimal.Decimal):
-                                        itm[k] = float(v)
-                                jfile.write(json.dumps(itm) + "\n")
-                            # reader = FileReader(tmp_file)
-                            # records = reader.read()
-                            # for record in records:
-                            #     dct = record.to_python()
-                            #     jfile.write(json.dumps(dct, ensure_ascii=False) + '\n')
-                    return True
-                return total_res
+                return True if fp is not None else total_res
             finally:
-                if tmp_name is not None:
+                for tmp_name in tmp_names:
                     os.remove(tmp_name)
 
         return res_js
+
+    def save_batch_result_data(self, elem, fp, result, tmp_file, tmp_names, total_res, url):
+        tmp_name = tmp_file.name
+        tmp_names.append(tmp_name)
+        url_query_results = "{}{}{}".format(url, '/', elem)
+        logging.info("Sending query to salesforce to get the batch {}".format(elem))
+        headers = self.headers
+        streaming = True if fp is not None else False
+        with self.session.request("GET", url_query_results, headers=headers,
+                                  stream=streaming) as query_result:
+
+            if self.calls_logger is not None:
+                self.calls_logger.add_metric(url_query_results, "GET", None)
+
+            if result.status_code >= 300:
+                exception_handler(result)
+
+            logging.info("Batch {} is obtained".format(elem))
+            if streaming:
+                for chunk in query_result.iter_content(chunk_size=1024000):
+                    if chunk:  # filter out keep-alive new chunks
+                        tmp_file.write(chunk)
+
+                logging.info("Batch {} is streamed to disk".format(elem))
+            else:
+                json_res = query_result.json()
+                total_res.extend(json_res)
+                logging.info("Batch {} is added to result list".format(elem))
+        return tmp_name
 
     def _monitor_batches(self, job_id, batch_id=None, wait=5):
         """ monitor a job's batches
