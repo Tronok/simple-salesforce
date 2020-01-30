@@ -299,11 +299,14 @@ class SFBulkType(object):
         while not batch_states.issubset(complete_states):
             sleep(wait)
             batches = self._get_batches(job_id=job_id, batch_id=batch_id)
-            states_tmp = [batch['state'] for batch in batches]
-            batch_states = set(states_tmp)
-            logging.info("Batches states are " + json.dumps(states_tmp))
+            batch_states = set()
+            for batch in batches:
+                if batch["state"] == "Failed":
+                    raise FailedBatchException("Batch with id {} has status failed. Reason is {}".format(batch["id"], batch.get("stateMessage")))
+                batch_states.add(batch['state'])
+            logging.info("Batches states are " + json.dumps(list(batch_states)))
 
-        return True
+        return batch_states
 
     # pylint: disable=R0913
     def _bulk_operation(self, object_name, operation, data,
@@ -348,13 +351,17 @@ class SFBulkType(object):
             for batch in batches:
                 if batch['id'] == init_batch['id']:
                     continue
-
+                if batch["state"] == "Failed":
+                    raise FailedBatchException("Batch with id {} has status failed".format(batch["id"]))
                 self._get_batch_results(job_id=init_batch['jobId'],
                                         batch_id=batch['id'],
                                         operation=operation,
                                         fp=fp)
 
             return True
+
+        if init_batch["state"] == "Failed":
+            raise FailedBatchException("Batch with id {} has status failed".format(init_batch["id"]))
 
         results = self._get_batch_results(job_id=init_batch['jobId'],
                                           batch_id=init_batch['id'],
@@ -402,3 +409,6 @@ class SFBulkType(object):
                                        fp=fp, chunk_size=chunk_size,
                                        wait=wait)
         return results
+
+class FailedBatchException(Exception):
+    pass
